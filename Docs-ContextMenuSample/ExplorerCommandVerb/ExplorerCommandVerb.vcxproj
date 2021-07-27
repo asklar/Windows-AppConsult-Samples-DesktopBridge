@@ -179,8 +179,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="dll.cpp" />
+    <ClCompile Include="ExplorerCommandEnum.cpp" />
     <ClCompile Include="ExplorerCommandStateHandler.cpp" />
     <ClCompile Include="ExplorerCommandVerb.cpp" />
+    <ClCompile Include="ExplorerCommandVerb.h" />
     <ClCompile Include="RegisterExtension.cpp" />
   </ItemGroup>
   <ItemGroup>
