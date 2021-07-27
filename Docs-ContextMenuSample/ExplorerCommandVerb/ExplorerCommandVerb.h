@@ -20,16 +20,16 @@
 #include <iostream>
 #include <Windows.h>
 
-static WCHAR const c_szVerbDisplayName[] = L"This is a custom context menu...";
-static WCHAR const c_szVerbName[] = L"Sample.ExplorerCommandVerb";
+IEnumExplorerCommand* CEnumExplorerCommand_CreateInstance();
 
 class CExplorerCommandVerb : public IExplorerCommand,
 	public IInitializeCommand,
 	public IObjectWithSite
 {
 public:
-	CExplorerCommandVerb() : _cRef(1), _punkSite(NULL), _hwnd(NULL), _pstmShellItemArray(NULL)
+	CExplorerCommandVerb(bool hasSubitems) : _cRef(1), _punkSite(NULL), _hwnd(NULL), _pstmShellItemArray(NULL)
 	{
+		_hasSubItems = hasSubitems;
 		DllAddRef();
 	}
 
@@ -62,11 +62,7 @@ public:
 	}
 
 	// IExplorerCommand
-	IFACEMETHODIMP GetTitle(IShellItemArray* /* psiItemArray */, LPWSTR* ppszName)
-	{
-		// the verb name can be computed here, in this example it is static
-		return SHStrDup(c_szVerbDisplayName, ppszName);
-	}
+	IFACEMETHODIMP GetTitle(IShellItemArray* /* psiItemArray */, LPWSTR* ppszName);
 
 	IFACEMETHODIMP GetIcon(IShellItemArray* /* psiItemArray */, LPWSTR* ppszIcon)
 	{
@@ -108,6 +104,7 @@ public:
 		//    hr = E_PENDING;
 		//}
 		*pCmdState = ECS_ENABLED;
+
 		HRESULT hr = S_OK;
 		return hr;
 	}
@@ -116,14 +113,20 @@ public:
 
 	IFACEMETHODIMP GetFlags(EXPCMDFLAGS* pFlags)
 	{
-		*pFlags = ECF_DEFAULT;
+		*pFlags = ECF_DEFAULT |ECF_HASSUBCOMMANDS;
 		return S_OK;
 	}
 
 	IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** ppEnum)
 	{
-		*ppEnum = NULL;
-		return E_NOTIMPL;
+		if (_hasSubItems) {
+			*ppEnum = CEnumExplorerCommand_CreateInstance();
+			return S_OK;
+		}
+		else {
+			*ppEnum = nullptr;
+			return E_NOTIMPL;
+		}
 	}
 
 	// IInitializeCommand
@@ -157,7 +160,7 @@ private:
 	}
 
 	DWORD _ThreadProc();
-
+	bool _hasSubItems;
 	static DWORD __stdcall s_ThreadProc(void* pv)
 	{
 		CExplorerCommandVerb* pecv = (CExplorerCommandVerb*)pv;
@@ -172,94 +175,4 @@ private:
 	IStream* _pstmShellItemArray;
 };
 
-DWORD CExplorerCommandVerb::_ThreadProc()
-{
-	IShellItemArray* psia;
-	HRESULT hr = CoGetInterfaceAndReleaseStream(_pstmShellItemArray, IID_PPV_ARGS(&psia));
-	_pstmShellItemArray = NULL;
-	if (SUCCEEDED(hr))
-	{
-		DWORD count;
-		psia->GetCount(&count);
 
-		IShellItem2* psi;
-		hr = GetItemAt(psia, 0, IID_PPV_ARGS(&psi));
-		if (SUCCEEDED(hr))
-		{
-			PWSTR pszName;
-			hr = psi->GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING, &pszName);
-			if (SUCCEEDED(hr))
-			{
-				WCHAR szMsg[128];
-				StringCchPrintf(szMsg, ARRAYSIZE(szMsg), L"%d item(s), first item is named %s", count, pszName);
-
-				MessageBox(_hwnd, szMsg, L"ExplorerCommand Sample Verb", MB_OK);
-
-				CoTaskMemFree(pszName);
-			}
-
-			psi->Release();
-		}
-		psia->Release();
-	}
-
-	return 0;
-}
-
-IFACEMETHODIMP CExplorerCommandVerb::Invoke(IShellItemArray* psia, IBindCtx* /* pbc */)
-{
-	IUnknown_GetWindow(_punkSite, &_hwnd);
-
-	HRESULT hr = CoMarshalInterThreadInterfaceInStream(__uuidof(psia), psia, &_pstmShellItemArray);
-	if (SUCCEEDED(hr))
-	{
-		AddRef();
-		if (!SHCreateThread(s_ThreadProc, this, CTF_COINIT_STA | CTF_PROCESS_REF, NULL))
-		{
-			Release();
-		}
-	}
-	return S_OK;
-}
-
-static WCHAR const c_szProgID[] = L"txtfile";
-
-HRESULT CExplorerCommandVerb_RegisterUnRegister(bool fRegister)
-{
-	CRegisterExtension re(__uuidof(CExplorerCommandVerb));
-
-	HRESULT hr;
-	if (fRegister)
-	{
-		hr = re.RegisterInProcServer(c_szVerbDisplayName, L"Apartment");
-		if (SUCCEEDED(hr))
-		{
-			// register this verb on .txt files ProgID
-			hr = re.RegisterExplorerCommandVerb(c_szProgID, c_szVerbName, c_szVerbDisplayName);
-			if (SUCCEEDED(hr))
-			{
-				hr = re.RegisterVerbAttribute(c_szProgID, c_szVerbName, L"NeverDefault");
-			}
-		}
-	}
-	else
-	{
-		// best effort
-		hr = re.UnRegisterVerb(c_szProgID, c_szVerbName);
-		hr = re.UnRegisterObject();
-	}
-	return hr;
-}
-
-HRESULT CExplorerCommandVerb_CreateInstance(REFIID riid, void** ppv)
-{
-	*ppv = NULL;
-	CExplorerCommandVerb* pVerb = new (std::nothrow) CExplorerCommandVerb();
-	HRESULT hr = pVerb ? S_OK : E_OUTOFMEMORY;
-	if (SUCCEEDED(hr))
-	{
-		pVerb->QueryInterface(riid, ppv);
-		pVerb->Release();
-	}
-	return hr;
-}
