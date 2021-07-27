@@ -100,7 +100,8 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="ExplorerCommandVerb.dll">
+    <ProjectReference Include="..\ExplorerCommandVerb\ExplorerCommandVerb.vcxproj" />
+    <Content Include="..\$(Platform)\$(Configuration)\ExplorerCommandVerb.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Images\SplashScreen.scale-200.png" />
