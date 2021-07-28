@@ -1,6 +1,6 @@
 #include "ExplorerCommandVerb.h"
 
-static WCHAR const c_szVerbDisplayName[] = L"This is a custom context menu...";
+static WCHAR const c_szVerbDisplayName[] = L"See legacy context menus...";
 static WCHAR const c_szVerbName[] = L"Sample.ExplorerCommandVerb";
 
 DWORD CExplorerCommandVerb::_ThreadProc()
@@ -10,6 +10,7 @@ DWORD CExplorerCommandVerb::_ThreadProc()
 	_pstmShellItemArray = NULL;
 	if (SUCCEEDED(hr))
 	{
+		
 		DWORD count;
 		psia->GetCount(&count);
 
@@ -40,7 +41,7 @@ DWORD CExplorerCommandVerb::_ThreadProc()
 IFACEMETHODIMP CExplorerCommandVerb::Invoke(IShellItemArray* psia, IBindCtx* /* pbc */)
 {
 	IUnknown_GetWindow(_punkSite, &_hwnd);
-
+	
 	HRESULT hr = CoMarshalInterThreadInterfaceInStream(__uuidof(psia), psia, &_pstmShellItemArray);
 	if (SUCCEEDED(hr))
 	{
@@ -55,7 +56,7 @@ IFACEMETHODIMP CExplorerCommandVerb::Invoke(IShellItemArray* psia, IBindCtx* /* 
 
 static WCHAR const c_szProgID[] = L"txtfile";
 
-HRESULT CExplorerCommandVerb_RegisterUnRegister(bool fRegister)
+HRESULT __cdecl CExplorerCommandVerb_RegisterUnRegister(bool fRegister)
 {
 	CRegisterExtension re(__uuidof(CExplorerCommandVerb));
 
@@ -100,3 +101,5 @@ IFACEMETHODIMP CExplorerCommandVerb::GetTitle(IShellItemArray* /* psiItemArray *
 	// the verb name can be computed here, in this example it is static
 	return SHStrDup(c_szVerbDisplayName, ppszName);
 }
+
+int CExplorerCommandVerb::num = 0;

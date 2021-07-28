@@ -20,15 +20,23 @@
 #include <iostream>
 #include <Windows.h>
 
-IEnumExplorerCommand* CEnumExplorerCommand_CreateInstance();
+class CExplorerCommandVerb;
+IEnumExplorerCommand* CEnumExplorerCommand_CreateInstance(CExplorerCommandVerb* e);
 
 class CExplorerCommandVerb : public IExplorerCommand,
 	public IInitializeCommand,
-	public IObjectWithSite
+	public IObjectWithSite,
+	public IObjectWithSelection
 {
+	static int num;
+	int id;
 public:
+	CExplorerCommandVerb(const CExplorerCommandVerb&) = delete;
+	CExplorerCommandVerb(CExplorerCommandVerb&&) = delete;
+
 	CExplorerCommandVerb(bool hasSubitems) : _cRef(1), _punkSite(NULL), _hwnd(NULL), _pstmShellItemArray(NULL)
 	{
+		id = num++;
 		_hasSubItems = hasSubitems;
 		DllAddRef();
 	}
@@ -41,6 +49,7 @@ public:
 			QITABENT(CExplorerCommandVerb, IExplorerCommand),       // required
 			QITABENT(CExplorerCommandVerb, IInitializeCommand),     // optional
 			QITABENT(CExplorerCommandVerb, IObjectWithSite),        // optional
+			QITABENT(CExplorerCommandVerb, IObjectWithSelection),
 			{ 0 },
 		};
 		return QISearch(this, qit, riid, ppv);
@@ -59,6 +68,17 @@ public:
 			delete this;
 		}
 		return cRef;
+	}
+
+	IFACEMETHODIMP SetSelection(IShellItemArray* sia) {
+		_psia = sia;// return sia->QueryInterface(IID_PPV_ARGS(&_psia));
+	}
+
+	IFACEMETHODIMP GetSelection(
+		REFIID riid,
+		void** ppv
+	) {
+		return _psia ? _psia->QueryInterface(riid, ppv) : E_NOTIMPL;
 	}
 
 	// IExplorerCommand
@@ -120,7 +140,7 @@ public:
 	IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** ppEnum)
 	{
 		if (_hasSubItems) {
-			*ppEnum = CEnumExplorerCommand_CreateInstance();
+			*ppEnum = CEnumExplorerCommand_CreateInstance(this);
 			return S_OK;
 		}
 		else {
@@ -152,6 +172,7 @@ public:
 	}
 
 private:
+
 	~CExplorerCommandVerb()
 	{
 		SafeRelease(&_punkSite);
@@ -170,9 +191,10 @@ private:
 	}
 
 	long _cRef;
-	IUnknown* _punkSite;
-	HWND _hwnd;
-	IStream* _pstmShellItemArray;
+	IUnknown* _punkSite{ nullptr };
+	HWND _hwnd{ 0 };
+	IStream* _pstmShellItemArray{ nullptr };
+	IShellItemArray* _psia{ nullptr };
 };
 
 
