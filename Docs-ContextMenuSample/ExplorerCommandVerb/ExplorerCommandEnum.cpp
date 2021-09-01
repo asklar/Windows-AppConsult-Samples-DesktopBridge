@@ -7,18 +7,19 @@ struct CEnumExplorerCommand : public IEnumExplorerCommand {
 	CEnumExplorerCommand(CExplorerCommandVerb* menu) : _cRef(1)
 	{
 		DllAddRef();
-
-		_menu = menu;
-		menu->AddRef();
+		_menu.copy_from(menu);
 	}
 
-	CExplorerCommandVerb* _menu{ nullptr };
+	winrt::com_ptr<CExplorerCommandVerb> _menu{ nullptr };
+
+
 	// IUnknown
 	IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv)
 	{
 		static const QITAB qit[] =
 		{
 			QITABENT(CEnumExplorerCommand, IEnumExplorerCommand),       // required
+			QITABENT(CEnumExplorerCommand, IShellExtInit),
 			{ 0 },
 		};
 		return QISearch(this, qit, riid, ppv);
@@ -56,18 +57,18 @@ struct CEnumExplorerCommand : public IEnumExplorerCommand {
 
 private:
 	long _cRef;
-	int idx = 0;
+	DWORD _idx = 0;
 
-	IShellItemArray* GetItems() {
-		IObjectWithSelection* sel{ nullptr };
-		IShellItemArray* psia{ nullptr };
+	winrt::com_ptr<IShellItemArray> GetItems() {
+		winrt::com_ptr<IObjectWithSelection> sel;
 		if (SUCCEEDED(_menu->QueryInterface(IID_PPV_ARGS(&sel)))) {
+			winrt::com_ptr<IShellItemArray> psia;
 			sel->GetSelection(IID_PPV_ARGS(&psia));
+			return psia;
 		}
-		return psia;
-	}
 
-	HKEY progId{ (HKEY)0 };
+		return nullptr;
+	}
 };
 
 
@@ -77,30 +78,28 @@ IFACEMETHODIMP CEnumExplorerCommand::Next(
 	ULONG* pceltFetched
 ) {
 
+	*pceltFetched = 0;
+	*pUICommand = nullptr;
 	DWORD count{ 0 };
 	auto psia = GetItems();
 	if (psia && SUCCEEDED(psia->GetCount(&count))) {
-		for (DWORD i = 0; i < count; i++) {
-			IShellItem* psi;
-			if (SUCCEEDED(psia->GetItemAt(i, &psi))) {
-				PWSTR name{ nullptr };
+		if (_idx < count) {
+			*pceltFetched = 1;
+			*pUICommand = reinterpret_cast<IExplorerCommand*>(CoTaskMemAlloc(sizeof(IExplorerCommand*) * 1));
+			winrt::com_ptr<IShellItem> psi;
+			if (SUCCEEDED(psia->GetItemAt(_idx++, psi.put()))) {
+				wil::unique_cotaskmem_string name;
 				if (SUCCEEDED(psi->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-					OutputDebugStringW(name);
-					CoTaskMemFree(name);
+					OutputDebugStringW(name.get());
+					OutputDebugStringW(L"\n");
+					pUICommand[0] = new CExplorerCommandVerb(name.get());
+					return S_OK;
 				}
-				psi->Release();
 			}
 		}
 	}
 
-	if (idx++ == 0) {
-		*pceltFetched = 1;
-		*pUICommand = new CExplorerCommandVerb(false);
-		return S_OK;
-	}
-	else {
-		return S_FALSE;
-	}
+	return E_FAIL;
 
 }
 

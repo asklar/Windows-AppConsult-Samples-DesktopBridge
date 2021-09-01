@@ -19,6 +19,7 @@
 #include "Dll.h"
 #include <iostream>
 #include <Windows.h>
+#include <winrt/base.h>
 
 class CExplorerCommandVerb;
 IEnumExplorerCommand* CEnumExplorerCommand_CreateInstance(CExplorerCommandVerb* e);
@@ -26,21 +27,32 @@ IEnumExplorerCommand* CEnumExplorerCommand_CreateInstance(CExplorerCommandVerb* 
 class CExplorerCommandVerb : public IExplorerCommand,
 	public IInitializeCommand,
 	public IObjectWithSite,
-	public IObjectWithSelection
+	public IObjectWithSelection,
+	public IShellExtInit
 {
 	static int num;
 	int id;
 public:
 	CExplorerCommandVerb(const CExplorerCommandVerb&) = delete;
 	CExplorerCommandVerb(CExplorerCommandVerb&&) = delete;
+	
+	static constexpr auto const c_szVerbDisplayName = L"See legacy context menus...";
 
-	CExplorerCommandVerb(bool hasSubitems) : _cRef(1), _punkSite(NULL), _hwnd(NULL), _pstmShellItemArray(NULL)
+	CExplorerCommandVerb(bool hasSubitems) : _cRef(1), _punkSite(NULL), _hwnd(NULL)
 	{
 		id = num++;
 		_hasSubItems = hasSubitems;
 		DllAddRef();
+		SHStrDup(c_szVerbDisplayName, &_title);
 	}
 
+	CExplorerCommandVerb(PWSTR title) : _cRef(1)
+	{
+		id = num++;
+		_hasSubItems = false;
+		DllAddRef();
+		SHStrDup(title, &_title);
+	}
 	// IUnknown
 	IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv)
 	{
@@ -50,6 +62,7 @@ public:
 			QITABENT(CExplorerCommandVerb, IInitializeCommand),     // optional
 			QITABENT(CExplorerCommandVerb, IObjectWithSite),        // optional
 			QITABENT(CExplorerCommandVerb, IObjectWithSelection),
+			QITABENT(CExplorerCommandVerb, IShellExtInit),
 			{ 0 },
 		};
 		return QISearch(this, qit, riid, ppv);
@@ -71,14 +84,37 @@ public:
 	}
 
 	IFACEMETHODIMP SetSelection(IShellItemArray* sia) {
-		_psia = sia;// return sia->QueryInterface(IID_PPV_ARGS(&_psia));
+		_psia.copy_from(sia);
+		return S_OK;
 	}
 
 	IFACEMETHODIMP GetSelection(
 		REFIID riid,
 		void** ppv
 	) {
-		return _psia ? _psia->QueryInterface(riid, ppv) : E_NOTIMPL;
+		if (_psia) {
+			return _psia->QueryInterface(riid, ppv);
+		}
+
+		//IShellItemArray* ows{ nullptr };
+		//if (SUCCEEDED(IUnknown_QueryService(_punkSite, SID_SFolderView, IID_PPV_ARGS(&ows)))) {
+		//	return ows->QueryInterface(riid, ppv);
+		//}
+		//
+		//IShellFolderView* fv{ nullptr };
+		//if (SUCCEEDED(IUnknown_QueryService(_punkSite, SID_SFolderView, IID_PPV_ARGS(&fv)))) {
+		//	PCUITEMID_CHILD* children;
+		//	UINT items{ 0 };
+		//	if (SUCCEEDED(fv->GetSelectedObjects(&children, &items))) {
+		//		return E_ACCESSDENIED;
+		//	}
+		//}
+		//
+		return E_NOTIMPL;
+	}
+
+	IFACEMETHODIMP Initialize(PCIDLIST_ABSOLUTE /*pidlFolder*/, IDataObject* pdtobj, HKEY /*progId*/) {
+		return SHCreateShellItemArrayFromDataObject(pdtobj, IID_PPV_ARGS(&this->_psia));
 	}
 
 	// IExplorerCommand
@@ -107,25 +143,11 @@ public:
 	// compute the visibility of the verb here, respect "fOkToBeSlow" if this is slow (does IO for example)
 	// when called with fOkToBeSlow == FALSE return E_PENDING and this object will be called
 	// back on a background thread with fOkToBeSlow == TRUE
-	IFACEMETHODIMP GetState(IShellItemArray* /* psiItemArray */, BOOL /*fOkToBeSlow*/, EXPCMDSTATE* pCmdState)
+	IFACEMETHODIMP GetState(IShellItemArray*  psiItemArray , BOOL /*fOkToBeSlow*/, EXPCMDSTATE* pCmdState)
 	{
-		//HRESULT hr;
-		//if (fOkToBeSlow)
-		//{
-		//    Sleep(4 * 1000);    // simulate expensive work
-		//    *pCmdState = ECS_ENABLED;
-		//    hr = S_OK;
-		//}
-		//else
-		//{
-		//    *pCmdState = ECS_DISABLED;
-		//    // returning E_PENDING requests that a new instance of this object be called back
-		//    // on a background thread so that it can do work that might be slow
-		//    hr = E_PENDING;
-		//}
 		*pCmdState = ECS_ENABLED;
-
-		HRESULT hr = S_OK;
+		_psia = nullptr;
+		HRESULT hr = psiItemArray->QueryInterface(IID_PPV_ARGS(&_psia));
 		return hr;
 	}
 
@@ -161,7 +183,7 @@ public:
 	// IObjectWithSite
 	IFACEMETHODIMP SetSite(IUnknown* punkSite)
 	{
-		SetInterface(&_punkSite, punkSite);
+		_punkSite.copy_from(punkSite);
 		return S_OK;
 	}
 
@@ -175,26 +197,18 @@ private:
 
 	~CExplorerCommandVerb()
 	{
-		SafeRelease(&_punkSite);
-		SafeRelease(&_pstmShellItemArray);
+		_punkSite = nullptr;
 		DllRelease();
 	}
 
-	DWORD _ThreadProc();
 	bool _hasSubItems;
-	static DWORD __stdcall s_ThreadProc(void* pv)
-	{
-		CExplorerCommandVerb* pecv = (CExplorerCommandVerb*)pv;
-		const DWORD ret = pecv->_ThreadProc();
-		pecv->Release();
-		return ret;
-	}
+	wil::unique_cotaskmem_string _title;
 
 	long _cRef;
-	IUnknown* _punkSite{ nullptr };
+	winrt::com_ptr<IUnknown> _punkSite{ nullptr };
 	HWND _hwnd{ 0 };
-	IStream* _pstmShellItemArray{ nullptr };
-	IShellItemArray* _psia{ nullptr };
+	//IStream* _pstmShellItemArray{ nullptr };
+	winrt::com_ptr<IShellItemArray> _psia{ nullptr };
 };
 
 

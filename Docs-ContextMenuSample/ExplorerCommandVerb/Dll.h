@@ -10,7 +10,8 @@
 #include "RegisterExtension.h"
 #include <strsafe.h>
 #include <new>  // std::nothrow
-
+#include <winrt/base.h>
+#include <wil/resource.h>
 void DllAddRef();
 void DllRelease();
 

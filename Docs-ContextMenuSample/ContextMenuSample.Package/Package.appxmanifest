@@ -14,8 +14,8 @@
 
   <Identity
     Name="ContextMenuSample"
-    Publisher="CN=Windows AppConsult"
-    Version="1.0.2.0" />
+    Publisher="CN=asklar"
+    Version="1.0.3.0" />
 
   <Properties>
     <DisplayName>ContextMenu Sample</DisplayName>

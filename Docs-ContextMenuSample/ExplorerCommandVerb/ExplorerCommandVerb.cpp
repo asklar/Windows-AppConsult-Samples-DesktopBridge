@@ -1,52 +1,54 @@
 #include "ExplorerCommandVerb.h"
+#include <wil/resource.h>
 
-static WCHAR const c_szVerbDisplayName[] = L"See legacy context menus...";
 static WCHAR const c_szVerbName[] = L"Sample.ExplorerCommandVerb";
 
-DWORD CExplorerCommandVerb::_ThreadProc()
+
+DWORD _ThreadProc(void* pv)
 {
-	IShellItemArray* psia;
-	HRESULT hr = CoGetInterfaceAndReleaseStream(_pstmShellItemArray, IID_PPV_ARGS(&psia));
-	_pstmShellItemArray = NULL;
+	winrt::com_ptr<IStream> pstm;
+	pstm.attach(reinterpret_cast<IStream*>(pv));
+
+	winrt::com_ptr<IShellItemArray> psia;
+	HRESULT hr = CoGetInterfaceAndReleaseStream(pstm.get(), IID_PPV_ARGS(&psia));
+
 	if (SUCCEEDED(hr))
 	{
-		
+
 		DWORD count;
 		psia->GetCount(&count);
 
-		IShellItem2* psi;
-		hr = GetItemAt(psia, 0, IID_PPV_ARGS(&psi));
+		winrt::com_ptr<IShellItem2> psi;
+		hr = GetItemAt(psia.get(), 0, IID_PPV_ARGS(&psi));
 		if (SUCCEEDED(hr))
 		{
-			PWSTR pszName;
+			wil::unique_cotaskmem_string pszName;
+			
 			hr = psi->GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING, &pszName);
 			if (SUCCEEDED(hr))
 			{
 				WCHAR szMsg[128];
-				StringCchPrintf(szMsg, ARRAYSIZE(szMsg), L"%d item(s), first item is named %s", count, pszName);
+				StringCchPrintf(szMsg, ARRAYSIZE(szMsg), L"%d item(s), first item is named %s", count, pszName.get());
 
-				MessageBox(_hwnd, szMsg, L"ExplorerCommand Sample Verb", MB_OK);
-
-				CoTaskMemFree(pszName);
+				MessageBox(nullptr, szMsg, L"ExplorerCommand Sample Verb", MB_OK);
 			}
-
-			psi->Release();
 		}
-		psia->Release();
 	}
 
 	return 0;
 }
 
+
 IFACEMETHODIMP CExplorerCommandVerb::Invoke(IShellItemArray* psia, IBindCtx* /* pbc */)
 {
-	IUnknown_GetWindow(_punkSite, &_hwnd);
+	IUnknown_GetWindow(_punkSite.get(), &_hwnd);
 	
-	HRESULT hr = CoMarshalInterThreadInterfaceInStream(__uuidof(psia), psia, &_pstmShellItemArray);
+	winrt::com_ptr<IStream> pstm;
+	HRESULT hr = CoMarshalInterThreadInterfaceInStream(__uuidof(psia), psia, pstm.put());
 	if (SUCCEEDED(hr))
 	{
 		AddRef();
-		if (!SHCreateThread(s_ThreadProc, this, CTF_COINIT_STA | CTF_PROCESS_REF, NULL))
+		if (!SHCreateThread(_ThreadProc, pstm.detach(), CTF_COINIT_STA | CTF_PROCESS_REF, NULL))
 		{
 			Release();
 		}
@@ -54,7 +56,7 @@ IFACEMETHODIMP CExplorerCommandVerb::Invoke(IShellItemArray* psia, IBindCtx* /* 
 	return S_OK;
 }
 
-static WCHAR const c_szProgID[] = L"txtfile";
+static WCHAR const c_szProgID[] = L"*";// L"txtfile";
 
 HRESULT __cdecl CExplorerCommandVerb_RegisterUnRegister(bool fRegister)
 {
@@ -63,11 +65,11 @@ HRESULT __cdecl CExplorerCommandVerb_RegisterUnRegister(bool fRegister)
 	HRESULT hr;
 	if (fRegister)
 	{
-		hr = re.RegisterInProcServer(c_szVerbDisplayName, L"Apartment");
+		hr = re.RegisterInProcServer(CExplorerCommandVerb::c_szVerbDisplayName, L"Apartment");
 		if (SUCCEEDED(hr))
 		{
 			// register this verb on .txt files ProgID
-			hr = re.RegisterExplorerCommandVerb(c_szProgID, c_szVerbName, c_szVerbDisplayName);
+			hr = re.RegisterExplorerCommandVerb(c_szProgID, c_szVerbName, CExplorerCommandVerb::c_szVerbDisplayName);
 			if (SUCCEEDED(hr))
 			{
 				hr = re.RegisterVerbAttribute(c_szProgID, c_szVerbName, L"NeverDefault");
@@ -99,7 +101,7 @@ HRESULT __cdecl CExplorerCommandVerb_CreateInstance(REFIID riid, void** ppv)
 IFACEMETHODIMP CExplorerCommandVerb::GetTitle(IShellItemArray* /* psiItemArray */, LPWSTR* ppszName)
 {
 	// the verb name can be computed here, in this example it is static
-	return SHStrDup(c_szVerbDisplayName, ppszName);
+	return SHStrDup(_title.get(), ppszName);
 }
 
 int CExplorerCommandVerb::num = 0;
